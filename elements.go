@@ -3,6 +3,7 @@ package elements
 import(
 	"fmt"
 	"strings"
+	"strconv"
 	"os"
 	"encoding/csv"
 	"golang.org/x/text/encoding/charmap"
@@ -54,6 +55,38 @@ func hasSrcName(km []KeyMapRow, s string) (bool, int) {
 		}
 	}
 	return false, -1
+}
+
+// colStringtoidx returns column-index from column-strings
+// if idcol is not in headernames => column-strings ar treated as int-indices for all
+// the column-strings
+func colStringToIdx(headernames []string, idcol, namecol, parentcol, childcol string) (
+	int, int, int, int,
+) {
+	var err error
+	idcolidx := findIdx(headernames, idcol)
+	namecolidx := findIdx(headernames, namecol)
+	parentcolidx := findIdx(headernames, parentcol)
+	childcolidx := findIdx(headernames, childcol)
+	if idcolidx < 0 {
+		idcolidx, err = strconv.Atoi(idcol)
+		if err != nil {
+			idcolidx = -1
+		}
+		namecolidx, err = strconv.Atoi(namecol)
+		if err != nil {
+			namecolidx = -1
+		}
+		parentcolidx, err = strconv.Atoi(parentcol)
+		if err != nil {
+			parentcolidx = -1
+		}
+		childcolidx, err = strconv.Atoi(childcol)
+		if err != nil {
+			childcolidx = -1
+		}
+	}
+	return idcolidx, namecolidx, parentcolidx, childcolidx
 }
 
 func NewElement(id, name, parent, path string, childs []string, level int) (Element) {
@@ -399,7 +432,7 @@ func (e *Element) EditKeyVals(key, pattern string, kind string ) error {
 	return nil
 }
 
-func ImportCsv(fp string, sep string, idcol, namecol, parentcol, childcol int, createOrigin bool) (*ElementBevy, error) {
+func ImportCsv(fp, sep, idcol, namecol, parentcol, childcol string, createOrigin bool) (*ElementBevy, error) {
 	file, err := os.Open(fp)
 	if err != nil {
 		return new(ElementBevy), err
@@ -450,21 +483,8 @@ func ToCsv(fp string, rec [][]string, sep string) error {
 	return nil
 }
 
-func ImportSpreadsheet(rec [][]string, headerrow, idcol, namecol, parentcol, childcol int, createOrigin bool, isUtf8 bool) (*ElementBevy, error) {
+func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol, childcol string, createOrigin bool, isUtf8 bool) (*ElementBevy, error) {
 	eb := NewElementBevy(createOrigin)
-
-	if idcol >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: idcol %d - row-cols %d", idcol, len(rec))
-	}
-	if namecol >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: namecol %d - row-cols %d", namecol, len(rec))
-	}
-	if parentcol >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: parentcol %d - row-cols %d", parentcol, len(rec))
-	}
-	if childcol >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: childcol %d - row-cols %d", childcol, len(rec))
-	}
 
 	readDecode := charmap.Windows1252.NewDecoder()
 	headernames := []string{}
@@ -482,24 +502,43 @@ func ImportSpreadsheet(rec [][]string, headerrow, idcol, namecol, parentcol, chi
 		headernames = append(headernames, headername)
 	}
 
-	fmt.Println(headernames)
+	// fmt.Println(headernames)
+	idcolidx, namecolidx, parentcolidx, childcolidx := colStringToIdx(
+		headernames, idcol, namecol, parentcol, childcol,
+	)
+	if idcolidx < 0 {
+		return nil, fmt.Errorf("ID-Col is not a valid headername nor an index: %s", idcol)
+	}
+
+	if idcolidx >= len(rec){
+		return new(ElementBevy), fmt.Errorf("ERROR index out of range: idcol %d - row-cols %d", idcol, len(rec))
+	}
+	if namecolidx >= len(rec){
+		return new(ElementBevy), fmt.Errorf("ERROR index out of range: namecol %d - row-cols %d", namecol, len(rec))
+	}
+	if parentcolidx >= len(rec){
+		return new(ElementBevy), fmt.Errorf("ERROR index out of range: parentcol %d - row-cols %d", parentcol, len(rec))
+	}
+	if childcolidx >= len(rec){
+		return new(ElementBevy), fmt.Errorf("ERROR index out of range: childcol %d - row-cols %d", childcol, len(rec))
+	}
 
 	for i, row := range rec {
 		if i <= headerrow {
 			continue
 		}
-		id := row[idcol]
+		id := row[idcolidx]
 		parent := ""
 		name := ""
 		childs := []string{}
-		if parentcol >= 0 {
-			parent = row[parentcol]
+		if parentcolidx >= 0 {
+			parent = row[parentcolidx]
 		}
-		if namecol >= 0 {
-			name = row[namecol]
+		if namecolidx >= 0 {
+			name = row[namecolidx]
 		}
-		if childcol >= 0 {
-			childs = append(childs, row[childcol])
+		if childcolidx >= 0 {
+			childs = append(childs, row[childcolidx])
 		}
 		e := NewElement(id, name, parent, "", childs, -1)
 		for k, rval := range row {
