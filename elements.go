@@ -680,3 +680,45 @@ func ParseKeyMap(rec [][]string, hasHeader bool) ([]KeyMapRow, []string, error) 
 	}
 	return km, srcColnames, nil
 }
+
+func (eb *ElementBevy)ReplaceKeyValueVals(srchpat, replpat string){
+	for _, e := range eb.Elements {
+		for k, vals := range e.KeyVals {
+			newvals := []string{}
+			for _, val := range vals {
+				if val == srchpat {
+					newvals = append(newvals, replpat)
+				} else {
+					newvals = append(newvals, val)
+				}
+			}
+			e.KeyVals[k] = newvals
+		}
+	}
+}
+
+// AddStringToKeyValValues adds given string 'pat' to 'key'-values
+// returns slice of element.ids from elements, where key is not a member of
+// Element.KeyVals
+// if 'addAsSuffix' is true -> appends pat to values, otherwith adds pat at
+// the begining of the values
+func (eb *ElementBevy)AddStringToKeyValValues(key, pat string, addAsSuffix bool) []string{
+	keyNotFoundElementIds := []string{}
+	for id, e := range eb.Elements {
+		_, ok := e.KeyVals[key]
+		if ok {
+			newvals := []string{}
+			for _, val := range e.KeyVals[key]{
+				if addAsSuffix {
+					newvals = append(newvals, fmt.Sprintf("%s%s", val, pat))
+				} else {
+					newvals = append(newvals, fmt.Sprintf("%s%s", pat, val))
+				}
+			}
+			e.KeyVals[key] = newvals
+		} else {
+			keyNotFoundElementIds = append(keyNotFoundElementIds, id)
+		}
+	}
+	return keyNotFoundElementIds
+}
