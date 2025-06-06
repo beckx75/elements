@@ -722,3 +722,26 @@ func (eb *ElementBevy)AddStringToKeyValValues(key, pat string, addAsSuffix bool)
 	}
 	return keyNotFoundElementIds
 }
+
+// collects all used KeyVals-Keys from elements in ElementBevy
+//
+// returns Map with Key and it's occurence as well as a list with
+// union keys
+func (eb ElementBevy) GetAllKeyValsKeys() (map[string]int, []string){
+	keyOccurence := make(map[string]int)
+	unionkeys := []string{}
+	
+	for _, elm := range eb.Elements{
+		for key, _ := range elm.KeyVals {
+			_, ok := keyOccurence[key]
+			if ok {
+				keyOccurence[key]++
+			} else {
+				keyOccurence[key] = 1
+				unionkeys = append(unionkeys, key)
+			}
+		}
+	}
+
+	return keyOccurence, unionkeys
+}
