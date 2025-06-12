@@ -12,6 +12,7 @@ import(
 const (
 	pathSeparator string = "/"
 	valsJoinString string = "|>"
+	LINE_BREAK_IN_ATTRS string = "<-'"
 )
 
 var keyMapTrueVals = []string{"j", "y", "ja", "Ja", "yes"}
@@ -47,14 +48,15 @@ func findIdx(list []string, item string) int {
 	return -1
 }
 
-func hasSrcName(km []KeyMapRow, s string) (bool, int) {
+func hasSrcName(km []KeyMapRow, s string) (bool, []int) {
 	// TODO here better use another konzept; perhaps a map!?
+	idxs := []int{}
 	for i, kmr := range km{
 		if kmr.SrcName == s {
-			return true, i
+			idxs = append(idxs, i)
 		}
 	}
-	return false, -1
+	return false, idxs
 }
 
 // colStringtoidx returns column-index from column-strings
@@ -68,6 +70,7 @@ func colStringToIdx(headernames []string, idcol, namecol, parentcol, childcol st
 	namecolidx := findIdx(headernames, namecol)
 	parentcolidx := findIdx(headernames, parentcol)
 	childcolidx := findIdx(headernames, childcol)
+	
 	if idcolidx < 0 {
 		idcolidx, err = strconv.Atoi(idcol)
 		if err != nil {
@@ -143,12 +146,13 @@ func (eb *ElementBevy) AddElement(elem Element, check_parent bool) error {
 
 func (e *Element) AddKeyVal(key, val string) {
 	_, ok := e.KeyVals[key]
-	if ok{
+	if ok {
 		e.KeyVals[key] = append(e.KeyVals[key], val)
 	} else {
 		e.KeyVals[key] = []string{val}
 	}
 }
+
 func (e *Element) AppendTextToKeyValue(key, text string) bool {
 	_, ok := e.KeyVals[key]
 	if ! ok {
@@ -432,7 +436,8 @@ func (e *Element) EditKeyVals(key, pattern string, kind string ) error {
 	return nil
 }
 
-func ImportCsv(fp, sep, idcol, namecol, parentcol, childcol string, createOrigin bool) (*ElementBevy, error) {
+func ImportCsv(fp, sep, idcol, namecol, parentcol, childcol string,
+	createOrigin bool, srcIsUtf8 bool) (*ElementBevy, error) {
 	file, err := os.Open(fp)
 	if err != nil {
 		return new(ElementBevy), err
@@ -457,7 +462,7 @@ func ImportCsv(fp, sep, idcol, namecol, parentcol, childcol string, createOrigin
 	return ImportSpreadsheet(
 		rec,
 		0, idcol, namecol, parentcol, childcol,
-		createOrigin, false,
+		createOrigin, srcIsUtf8,
 	)
 }
 
@@ -483,26 +488,25 @@ func ToCsv(fp string, rec [][]string, sep string) error {
 	return nil
 }
 
-func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol, childcol string, createOrigin bool, isUtf8 bool) (*ElementBevy, error) {
+func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol, childcol string,
+	createOrigin bool, srcIsUtf8 bool) (*ElementBevy, error) {
 	eb := NewElementBevy(createOrigin)
-
-	readDecode := charmap.Windows1252.NewDecoder()
+	cp1252Decoder := charmap.Windows1252.NewDecoder()
 	headernames := []string{}
 	for _, hn := range rec[headerrow] {
 		var headername string
-		if isUtf8 {
+		if srcIsUtf8 {
 			headername = hn
 		} else {
-			headername, _ = readDecode.String(hn)
+			headername, _ = cp1252Decoder.String(hn)
 		}
 		idx := findIdx(headernames, headername)
 		if idx >= 0 {
-			return new(ElementBevy), fmt.Errorf("ERROR non-unique Headername %s", headername)
+			return new(ElementBevy), fmt.Errorf("ERROR non-unique Headername '%s'", headername)
 		}
 		headernames = append(headernames, headername)
 	}
 
-	// fmt.Println(headernames)
 	idcolidx, namecolidx, parentcolidx, childcolidx := colStringToIdx(
 		headernames, idcol, namecol, parentcol, childcol,
 	)
@@ -510,50 +514,44 @@ func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol,
 		return nil, fmt.Errorf("ID-Col is not a valid headername nor an index: %s", idcol)
 	}
 
-	if idcolidx >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: idcol %d - row-cols %d", idcol, len(rec))
-	}
-	if namecolidx >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: namecol %d - row-cols %d", namecol, len(rec))
-	}
-	if parentcolidx >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: parentcol %d - row-cols %d", parentcol, len(rec))
-	}
-	if childcolidx >= len(rec){
-		return new(ElementBevy), fmt.Errorf("ERROR index out of range: childcol %d - row-cols %d", childcol, len(rec))
-	}
-
 	for i, row := range rec {
 		if i <= headerrow {
 			continue
+		}
+		if idcolidx >= len(row) {
+			return nil, fmt.Errorf("index out of range: id-col-idx %d is greater than row length %d (no ID-Value Column)",
+				idcolidx, len(row),
+			)
 		}
 		id := row[idcolidx]
 		parent := ""
 		name := ""
 		childs := []string{}
-		if parentcolidx >= 0 {
+		if (parentcolidx >= 0) && (parentcolidx < len(row)) {
 			parent = row[parentcolidx]
 		}
-		if namecolidx >= 0 {
+		if (namecolidx >= 0) && (namecolidx < len(row)){
 			name = row[namecolidx]
 		}
-		if childcolidx >= 0 {
+		if (childcolidx >= 0 ) && (childcolidx < len(row)) {
 			childs = append(childs, row[childcolidx])
 		}
+
 		e := NewElement(id, name, parent, "", childs, -1)
 		for k, rval := range row {
 			var val string
 			var err error
-			if isUtf8 {
+			if srcIsUtf8 {
 				val = rval
 			} else {
-				val, err = readDecode.String(rval)
+				val, err = cp1252Decoder.String(rval)
 				if err != nil {
 					return nil, err
 				}
 			}
 			if k >= len(headernames) {
-				return nil, fmt.Errorf("ERROR - index out of range: cell-val-index %d greater than headernames %d", k, len(headernames))
+				return nil, fmt.Errorf("ERROR - index out of range: cell-val-index %d greater than headernames %d with value %s",
+					k, len(headernames), val)
 			}
 			e.AddKeyVal(headernames[k], val)
 		}
@@ -562,7 +560,7 @@ func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol,
 	return eb, nil
 }
 
-func (eb ElementBevy) ToSpreadsheetWithKeyMap(km []KeyMapRow, useCp1252 bool) ([][]string, error) {
+func (eb ElementBevy) ToSpreadsheetWithKeyMap(km []KeyMapRow, dstIsUtf8 bool) ([][]string, error) {
 	// TODO Konzept for integration element-fields Id, Name, Path, Level, Parent, Childs
 	cp1252Encoder := charmap.Windows1252.NewEncoder()
 	rec := [][]string{}
@@ -572,37 +570,81 @@ func (eb ElementBevy) ToSpreadsheetWithKeyMap(km []KeyMapRow, useCp1252 bool) ([
 			headerrow = append(headerrow, kmr.DstName)
 		}
 	}
+	
 	rec = append(rec, headerrow)
 	for _, e := range eb.Elements{
 		row := []string{}
 		for i := 0; i < len(headerrow); i++ {
 			row = append(row, "")
 		}
-		for key, vals := range e.KeyVals{
-			ok, mapIdx := hasSrcName(km, key)
-			if ! ok {
+
+		for _, kmr := range km {
+			// for key, vals := range e.KeyVals{
+			vals, ok := e.KeyVals[kmr.SrcName]
+			// ok, mapIdx := hasSrcName(km, key)
+			if !ok {
+				fmt.Printf("EEERRROOORRR---------- have Sourcename in Keymap which is not in Element.KeyVals: %s\n",
+				  kmr.SrcName)
 				continue
 			}
-			dstname := km[mapIdx].DstName
 			val := strings.Join(vals, valsJoinString)
-			if useCp1252 {
-				var err error
-				val, err = cp1252Encoder.String(val)
-				if err != nil {
-					return [][]string{}, fmt.Errorf("ERROR could not encode value %s to CP1252", val)
-				}
-			}
-			if km[mapIdx].UseSrcNameInTarget {
-				val = fmt.Sprintf("\"%s:\" \"%s\"", key, val)
-			}
 			if val == "" {
 				continue
 			}
-			headerIdx := findIdx(headerrow, dstname)
+
+			// srcname := km[mapIdx].SrcName
+			// dstname := km[mapIdx].DstName
+			// useSrcnameInTarget := km[mapIdx].UseSrcNameInTarget
+			// fmt.Println(srcname, dstname, useSrcnameInTarget)
+
+			if kmr.UseSrcNameInTarget {
+				val = fmt.Sprintf("\"%s:\" \"%s\"", kmr.SrcName, val)
+				// fmt.Println("source-name in target:", val)
+			}
+			
+			headerIdx := findIdx(headerrow, kmr.DstName)
+			if !dstIsUtf8 {
+				var err error
+				val, err = cp1252Encoder.String(val)
+				if err != nil {
+					return [][]string{}, fmt.Errorf("ERROR could not encode value '%s' to CP1252", val)
+				}
+			}
 			if row[headerIdx] == "" {
 				row[headerIdx] = val
 			} else {
-				row[headerIdx] = fmt.Sprintf("%s,%s", row[headerIdx], val)
+				row[headerIdx] = fmt.Sprintf("%s%s%s", row[headerIdx], LINE_BREAK_IN_ATTRS, val)
+			}
+			// fmt.Println("\t", row)
+		}
+		rec = append(rec, row)
+	}
+	return rec, nil
+}
+
+func (eb ElementBevy) ToSpreadsheet(dstIsUtf8 bool) ([][]string, error) {
+	// TODO Konzept for integration element-fields Id, Name, Path, Level, Parent, Childs
+	cp1252Encoder := charmap.Windows1252.NewEncoder()
+	rec := [][]string{}
+	_, headerrow := eb.GetAllKeyValsKeys()
+	
+	rec = append(rec, headerrow)
+	for _, e := range eb.Elements{
+		row := []string{}
+		for _, col := range headerrow {
+			vals, ok := e.KeyVals[col]
+			if ok {
+				val := strings.Join(vals, valsJoinString)
+				if !dstIsUtf8 {
+					var err error
+					val, err = cp1252Encoder.String(val)
+					if err != nil {
+						return [][]string{}, fmt.Errorf("ERROR could not encode value '%s' to CP1252", val)
+					}
+				}
+				row = append(row, val)
+			} else {
+				row = append(row, "")
 			}
 		}
 		rec = append(rec, row)
@@ -681,13 +723,15 @@ func ParseKeyMap(rec [][]string, hasHeader bool) ([]KeyMapRow, []string, error) 
 	return km, srcColnames, nil
 }
 
-func (eb *ElementBevy)ReplaceKeyValueVals(srchpat, replpat string){
+func (eb *ElementBevy)ReplaceKeyValueVals(srchpat, replpat string) int{
+	replacedKeyVals := 0
 	for _, e := range eb.Elements {
 		for k, vals := range e.KeyVals {
 			newvals := []string{}
 			for _, val := range vals {
 				if val == srchpat {
 					newvals = append(newvals, replpat)
+					replacedKeyVals++
 				} else {
 					newvals = append(newvals, val)
 				}
@@ -695,6 +739,7 @@ func (eb *ElementBevy)ReplaceKeyValueVals(srchpat, replpat string){
 			e.KeyVals[k] = newvals
 		}
 	}
+	return replacedKeyVals
 }
 
 // AddStringToKeyValValues adds given string 'pat' to 'key'-values
