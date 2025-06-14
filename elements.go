@@ -3,6 +3,7 @@ package elements
 import(
 	"fmt"
 	"strings"
+	"sort"
 	"strconv"
 	"os"
 	"encoding/csv"
@@ -536,7 +537,7 @@ func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol,
 		if (childcolidx >= 0 ) && (childcolidx < len(row)) {
 			childs = append(childs, row[childcolidx])
 		}
-
+		
 		e := NewElement(id, name, parent, "", childs, -1)
 		for k, rval := range row {
 			var val string
@@ -570,9 +571,15 @@ func (eb ElementBevy) ToSpreadsheetWithKeyMap(km []KeyMapRow, dstIsUtf8 bool) ([
 			headerrow = append(headerrow, kmr.DstName)
 		}
 	}
+	sort.Strings(headerrow)
 	
 	rec = append(rec, headerrow)
-	for _, e := range eb.Elements{
+	for _, eid := range eb.Elementindex {
+		// for _, e := range eb.Elements{
+		e, ok := eb.Elements[eid]
+		if !ok {
+			return nil, fmt.Errorf("found Element-ID in Elementindex which is not a member of Elements: %s", eid)
+		}
 		row := []string{}
 		for i := 0; i < len(headerrow); i++ {
 			row = append(row, "")
@@ -627,9 +634,15 @@ func (eb ElementBevy) ToSpreadsheet(dstIsUtf8 bool) ([][]string, error) {
 	cp1252Encoder := charmap.Windows1252.NewEncoder()
 	rec := [][]string{}
 	_, headerrow := eb.GetAllKeyValsKeys()
+	sort.Strings(headerrow)
 	
 	rec = append(rec, headerrow)
-	for _, e := range eb.Elements{
+	for _, eid := range eb.Elementindex {
+		// for _, e := range eb.Elements{
+		e, ok := eb.Elements[eid]
+		if !ok {
+			return nil, fmt.Errorf("found Element-ID in Elementindex which is not a member of Elements: %s", eid)
+		}
 		row := []string{}
 		for _, col := range headerrow {
 			vals, ok := e.KeyVals[col]
@@ -741,6 +754,29 @@ func (eb *ElementBevy)ReplaceKeyValueVals(srchpat, replpat string) int{
 	}
 	return replacedKeyVals
 }
+
+func (eb *ElementBevy)ReplaceKeyValuePattern(old, new string) int{
+	replacedKeyVals := 0
+	fmt.Println("Old:", old)
+	fmt.Printf("New: '%s'", new)
+	for _, e := range eb.Elements {
+		for k, vals := range e.KeyVals {
+			newvals := []string{}
+			for _, val := range vals {
+				if strings.Contains(val, old) {
+					newval := strings.ReplaceAll(val, old, new)
+					fmt.Println(newval)
+					newvals = append(newvals, newval)
+				} else {
+					newvals = append(newvals, val)
+				}
+			}
+			e.KeyVals[k] = newvals
+		}
+	}
+	return replacedKeyVals
+}
+
 
 // AddStringToKeyValValues adds given string 'pat' to 'key'-values
 // returns slice of element.ids from elements, where key is not a member of
