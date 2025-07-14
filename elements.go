@@ -11,6 +11,7 @@ const (
 	pathSeparator       string = "/"
 	valsJoinString      string = "|>"
 	LINE_BREAK_IN_ATTRS string = "<-'"
+	PARENT_SEP          string = "||"
 )
 
 var keyMapTrueVals = []string{"j", "y", "ja", "Ja", "yes"}
@@ -19,6 +20,7 @@ type ElementBevy struct {
 	Elementindex []string
 	Elements     map[string]Element
 	Levels       [][]string
+	ElementTree  map[string]string
 }
 
 type Element struct {
@@ -35,6 +37,32 @@ type KeyMapRow struct {
 	SrcName            string
 	DstName            string
 	UseSrcNameInTarget bool
+}
+
+func (eb *ElementBevy) MakePaths() {
+	eb.ElementTree = make(map[string]string)
+	for _, e := range eb.Elements {
+		path := e.Id
+		walkParents(eb, e.Id, &path)
+		fmt.Println("Path:", path)
+		fmt.Println("<--------- DONE --------------->")
+		e.Path = path
+	}
+}
+
+func walkParents(eb *ElementBevy, eid string, path *string) {
+	fmt.Println("current EID:", eid)
+	if eb.Elements[eid].Parent != "" {
+		parents := strings.Split(eb.Elements[eid].Parent, PARENT_SEP)
+		for _, parent := range parents {
+			fmt.Println("\tparent:", parent)
+			fmt.Println("\tpath:", *path)
+			*path = parent + pathSeparator + eid
+			walkParents(eb, parent, path)
+		}
+	} else {
+		return
+	}
 }
 
 func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol, childcol string,
