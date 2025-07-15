@@ -20,7 +20,8 @@ type ElementBevy struct {
 	Elementindex []string
 	Elements     map[string]Element
 	Levels       [][]string
-	ElementTree  map[string]string
+
+	PathToElement map[string]string
 }
 
 type Element struct {
@@ -40,29 +41,33 @@ type KeyMapRow struct {
 }
 
 func (eb *ElementBevy) MakePaths() {
-	eb.ElementTree = make(map[string]string)
+	eb.PathToElement = make(map[string]string)
 	for _, e := range eb.Elements {
-		path := e.Id
-		walkParents(eb, e.Id, &path)
-		fmt.Println("Path:", path)
-		fmt.Println("<--------- DONE --------------->")
+		path := pathSeparator + e.Id
+		if e.Parent != "" {
+			path = walkParents(eb, e, path)
+		}
 		e.Path = path
+		eb.Elements[e.Id] = e
+		_, ok := eb.PathToElement[path]
+		if ok {
+			fmt.Printf("EEEEEEEEERRRRRRRROR: found non unique Element Path '%s'\n", path)
+		} else {
+			eb.PathToElement[path] = e.Id
+		}
 	}
 }
 
-func walkParents(eb *ElementBevy, eid string, path *string) {
-	fmt.Println("current EID:", eid)
-	if eb.Elements[eid].Parent != "" {
-		parents := strings.Split(eb.Elements[eid].Parent, PARENT_SEP)
-		for _, parent := range parents {
-			fmt.Println("\tparent:", parent)
-			fmt.Println("\tpath:", *path)
-			*path = parent + pathSeparator + eid
-			walkParents(eb, parent, path)
+func walkParents(eb *ElementBevy, e Element, path string) string {
+	if e.Parent != "" {
+		path = pathSeparator + e.Parent + path
+		if eb.Elements[e.Parent].Parent != "" {
+			path = walkParents(eb, eb.Elements[e.Parent], path)
+		} else {
+			return path
 		}
-	} else {
-		return
 	}
+	return path
 }
 
 func ImportSpreadsheet(rec [][]string, headerrow int, idcol, namecol, parentcol, childcol string,
